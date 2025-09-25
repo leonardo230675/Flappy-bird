@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Epic Snake Fullscreen</title>
+<style>
+body {
+  margin:0;
+  font-family:'Segoe UI',sans-serif;
+  background: linear-gradient(to right,#1f4037,#99f2c8);
+  overflow:hidden;
+  color:#fff;
+}
+#gameCanvas { display:block; background:#222; margin:0; position:absolute; top:0; left:0; z-index:0; }
+#scoreDisplay { position:absolute; top:10px; left:50%; transform:translateX(-50%); font-size:2em; text-shadow:2px 2px #000; z-index:2; }
+#codeContainer { position:absolute; top:50px; left:50%; transform:translateX(-50%); text-align:center; z-index:2; }
+#codeInput, #nameInput { font-size:1.2em; padding:8px; border-radius:10px; border:none; text-align:center; font-weight:bold; text-shadow:1px 1px 5px #0f0; margin:5px; }
+#codeInput { color:#0f0; background:rgba(0,0,0,0.5); }
+#nameInput { color:#f00; background:rgba(0,0,0,0.5); }
+#codeBtn, #startBtn { font-size:1.2em; padding:10px 20px; border-radius:10px; border:none; color:white; cursor:pointer; margin:5px; z-index:2; position:relative; }
+#codeBtn { background: linear-gradient(45deg,#00b09b,#96c93d); }
+#startBtn { background: linear-gradient(45deg,#ff7e5f,#feb47b); }
+#leaderboard { position:absolute; top:10px; right:10px; background:rgba(0,0,0,0.5); padding:10px; border-radius:10px; text-align:left; z-index:2; }
+#adminPanel { display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff3f3; color:#000; padding:20px; border-radius:15px; text-align:left; z-index:3; }
+#restartBtn { font-size:1.2em; padding:10px 20px; border-radius:10px; border:none; background: linear-gradient(45deg,#ff416c,#ff4b2b); color:white; cursor:pointer; margin-top:10px; display:block; z-index:2; position:relative; }
+</style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+<div id="scoreDisplay"></div>
+
+<div id="codeContainer">
+  <input type="text" id="codeInput" placeholder="Code eingeben">
+  <br>
+  <input type="text" id="nameInput" placeholder="Name eingeben">
+  <br>
+  <button id="codeBtn">Code eingeben</button>
+  <button id="startBtn">Spiel Starten</button>
+</div>
+
+<div id="leaderboard">
+  <h3>🏆 Leaderboard</h3>
+  <ul id="leaderboardList"></ul>
+  <button id="restartBtn">Neustarten</button>
+</div>
+
+<div id="adminPanel">
+  <h3>⚡ Admin Panel ⚡</h3>
+  <button onclick="kickPlayer()">Spieler kicken</button>
+  <button onclick="changeScore()">Highscore ändern</button>
+  <button onclick="boostSelf()">Boost dich selbst</button>
+  <button onclick="maxAll()">Alle Scores auf Max setzen</button>
+  <button onclick="closeAdmin()">Admin Panel schließen</button>
+</div>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+let grid = 30;
+let snake = [];
+let dx = 1, dy = 0;
+let score = 0;
+let speed = 200; 
+let playerName = "Spieler";
+let leaderboard = JSON.parse(localStorage.getItem('leaderboard')) || {};
+let gameInterval;
+let running = false;
+let apples = [];
+const maxApples = 3;
+
+const CODES = {
+  "Leonardo1234333":"admin",
+  "BoostMe123":"boost",
+  "ResetAll999":"reset_all",
+  "GhostKick777":"kick_random",
+  "MaxScoreX":"maxscore",
+  "LuckyShake88":"luckyscore"
+}
+
+function resizeCanvas(){
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+function spawnApple(){
+  while(apples.length < maxApples){
+    let newApple = {};
+    let valid = false;
+    while(!valid){
+      newApple.x = Math.floor(canvas.width/grid * Math.random());
+      newApple.y = Math.floor(canvas.height/grid * Math.random());
+      valid = !snake.some(s=>s.x===newApple.x && s.y===newApple.y) &&
+              !apples.some(a=>a.x===newApple.x && a.y===newApple.y);
+    }
+    apples.push(newApple);
+  }
+}
+
+function initGame(){
+  const nameInput = document.getElementById('nameInput').value.trim();
+  if(nameInput) playerName = nameInput;
+  snake = [{x:5,y:5}];
+  dx = 1; dy = 0;
+  score = 0;
+  running = true;
+  apples = [];
+  spawnApple();
+  if(gameInterval) clearInterval(gameInterval);
+  gameInterval = setInterval(gameLoop, speed);
+  updateScore();
+}
+
+function gameLoop(){
+  if(!running) return;
+  let head = {x: snake[0].x + dx, y: snake[0].y + dy};
+
+  if(head.x<0) head.x = Math.floor(canvas.width/grid)-1;
+  if(head.x>=Math.floor(canvas.width/grid)) head.x = 0;
+  if(head.y<0) head.y = Math.floor(canvas.height/grid)-1;
+  if(head.y>=Math.floor(canvas.height/grid)) head.y = 0;
+
+  if(snake.some(s=>s.x===head.x && s.y===head.y)){
+    running = false;
+    saveHighscore();
+    alert("Game Over! Score: "+score);
+    return;
+  }
+
+  snake.unshift(head);
+  let ateApple = false;
+  for(let i=0;i<apples.length;i++){
+    if(head.x===apples[i].x && head.y===apples[i].y){
+      score++;
+      apples.splice(i,1);
+      spawnApple();
+      ateApple = true;
+      break;
+    }
+  }
+
+  if(!ateApple){
+    snake.pop();
+  }
+
+  drawGame();
+  updateScore();
+}
+
+function drawGame(){
+  ctx.fillStyle="#222"; // dunkler Hintergrund, nicht komplett schwarz
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  apples.forEach(a=>{
+    ctx.fillStyle="red";
+    ctx.shadowColor="yellow";
+    ctx.shadowBlur=20;
+    ctx.fillRect(a.x*grid, a.y*grid, grid, grid);
+  });
+  ctx.shadowBlur=0;
+
+  snake.forEach((s,i)=>{
+    ctx.fillStyle=`hsl(120,100%,${30 + i*1.5}%)`;
+    ctx.fillRect(s.x*grid, s.y*grid, grid-2, grid-2);
+  });
+}
+
+function updateScore(){ document.getElementById('scoreDisplay').textContent="Score: "+score; }
+
+function saveHighscore(){
+  leaderboard[playerName] = Math.max(score, leaderboard[playerName]||0);
+  localStorage.setItem('leaderboard', JSON.stringify(leaderboard));
+  renderLeaderboard();
+}
+
+function renderLeaderboard(){
+  const list = document.getElementById('leaderboardList');
+  list.innerHTML='';
+  Object.keys(leaderboard).sort((a,b)=>leaderboard[b]-leaderboard[a])
+        .forEach(n=>{
+          const li = document.createElement('li');
+          li.textContent = n+": "+leaderboard[n];
+          list.appendChild(li);
+        });
+}
+
+document.addEventListener("keydown", e=>{
+  switch(e.key){
+    case "ArrowUp": if(dy===0){dx=0; dy=-1;} break;
+    case "ArrowDown": if(dy===0){dx=0; dy=1;} break;
+    case "ArrowLeft": if(dx===0){dx=-1; dy=0;} break;
+    case "ArrowRight": if(dx===0){dx=1; dy=0;} break;
+    case "p": openAdminPrompt(); break;
+  }
+});
+
+document.getElementById('codeBtn').addEventListener('click', ()=>{
+  let code = document.getElementById('codeInput').value.trim();
+  document.getElementById('codeInput').value='';
+  activateCode(code);
+});
+document.getElementById('startBtn').addEventListener('click', ()=>{
+  initGame();
+  document.getElementById('codeContainer').style.display='none';
+});
+document.getElementById('restartBtn').addEventListener('click', ()=>{ initGame(); });
+
+function activateCode(code){
+  if(!(code in CODES)){ alert("Ungültiger Code!"); return; }
+  let action = CODES[code];
+  switch(action){
+    case "admin": document.getElementById('adminPanel').style.display='block'; break;
+    case "boost": leaderboard[playerName] = (leaderboard[playerName]||0)*2; break;
+    case "reset_all": Object.keys(leaderboard).forEach(k=>leaderboard[k]=0); break;
+    case "kick_random": let keys = Object.keys(leaderboard); if(keys.length) delete leaderboard[keys[Math.floor(Math.random()*keys.length)]]; break;
+    case "maxscore": leaderboard[playerName]=9999; break;
+    case "luckyscore": leaderboard[playerName]=(leaderboard[playerName]||0)+Math.floor(Math.random()*400+100); break;
+  }
+  saveHighscore();
+}
+
+function kickPlayer(){ let target = prompt("Spieler kicken?"); if(target && leaderboard[target]) delete leaderboard[target]; saveHighscore();}
+function changeScore(){ let target = prompt("Score ändern?"); let newS=parseInt(prompt("Neuer Score:")); if(target && !isNaN(newS)) leaderboard[target]=newS; saveHighscore();}
+function boostSelf(){ leaderboard[playerName]=(leaderboard[playerName]||0)+500; saveHighscore();}
+function maxAll(){ Object.keys(leaderboard).forEach(k=>leaderboard[k]=9999); saveHighscore();}
+function closeAdmin(){ document.getElementById('adminPanel').style.display='none'; }
+function openAdminPrompt(){ let code=prompt("Admin-Code oder Spezial-Code eingeben:"); if(code) activateCode(code); }
+
+renderLeaderboard();
+</script>
+</body>
+</html>
